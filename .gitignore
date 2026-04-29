@@ -4,3 +4,4 @@ __pycache__/
 data/cache/
 .claude/
 .ipynb_checkpoints/
+decision_log.csv

@@ -21,6 +21,49 @@ The rest of this document is the operational layer: position sizing, order types
 
 ---
 
+## How to actually run this day-to-day — `daily_signal.py`
+
+The repo includes a single-command operational runner:
+
+```bash
+python daily_signal.py             # show today's signal
+python daily_signal.py --log       # also append to decision_log.csv
+python daily_signal.py --history 30  # show last 30 days of decisions
+python daily_signal.py --quiet     # JSON output (for piping)
+```
+
+**Recommended cadence:** run once each evening after US market close (~5:30pm ET). The script:
+1. Pulls the latest [SqueezeMetrics free CSV](https://squeezemetrics.com/monitor/static/DIX.csv) (caches locally; `--refresh` to force re-pull).
+2. Reads today's GEX, computes 1-year z-score, classifies regime.
+3. Prints tomorrow's recommended SPY position (LONG / STEP ASIDE).
+4. Flags borderline cases (|z| < 0.3σ, "consider sitting tight" — noise dominates signal).
+5. Flags regime transitions vs yesterday.
+6. Optionally logs to `decision_log.csv` for later audit / paper-trade comparison.
+
+**Cron-friendly:**
+```
+30 17 * * 1-5  cd "$HOME/Documents/Market Maker" && python daily_signal.py --log
+```
+
+**Sample output:**
+```
+  Market Maker Daily Signal — Rule #1 (GEX defensive tilt)
+  ──────────────────────────────────────────────────────────
+  Data as of:           2026-04-28
+  SPX close:            7,138.80
+  Dealer GEX:           $+6.25B per 1% spot move
+  GEX 1y z-score:       +0.20σ  (pct rank 48%)
+  DIX:                  0.447
+
+  🟢 REGIME:  POSITIVE-GEX  /  CALM
+  ➤ TOMORROW'S POSITION:  LONG SPY  (full target weight)
+  ⚠ borderline z<0.3 — consider sitting tight
+```
+
+**Paper-trade phase recommendation:** before committing real capital, run with `--log` for 30+ trading days and review the decision log against actual SPY moves. If the rule is doing what you expect, scale into real allocation. If not, the log will show you why.
+
+---
+
 ## What's actionable, in priority order
 
 ### Rule #1 — Defensive GEX tilt on SPY core position
