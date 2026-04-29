@@ -13,7 +13,7 @@ The most important finding is **what didn't survive**. The "MMs fade retail" mem
 
 What survives:
 
-1. **Tilt SPY exposure based on dealer GEX regime.** Long when daily GEX > 0; flat when GEX < 0. Almost matches SPY's risk-adjusted return (OOS Sharpe 0.82 vs 0.90) while cutting max drawdown from -34% to -22%. ~14 trades per year. **This is the highest-quality finding in the project.**
+1. **Double-stress defensive tilt on SPY** *(Phase 2.5 update from the simpler GEX-only earlier draft):* be long SPY UNLESS *both* `VIX > 25` AND `GEX < 0` simultaneously. OOS Sharpe **0.89** (vs SPY's 0.90), max DD -22% (vs SPY's -34%). ~8–14 trades/year. Requiring confirmation across two independent stress channels improves OOS Sharpe by 0.07 over GEX-only and is more robust to vendor risk. **This is the highest-quality finding in the project.**
 2. **Don't trade attention-extreme single names systematically — in either direction.** Don't fade (the data says you'll lose), don't chase (variance is huge, drawdowns when wrong are -50% to -90%). The retail edge is *not here*; treat these as unhedgeable lottery tickets and size accordingly.
 3. **Don't try to outrun MMs intraday.** The Dim/Eraker/Vilkov intraday gamma-reflexivity result does *not* survive translation to daily-frequency trading. Without intraday option-chain access (Polygon/CBOE DataShop) you can't directly trade their finding, and the naive daily proxies lose money cleanly.
 
@@ -66,36 +66,49 @@ python daily_signal.py --quiet     # JSON output (for piping)
 
 ## What's actionable, in priority order
 
-### Rule #1 — Defensive GEX tilt on SPY core position
+### Rule #1 — Double-stress defensive tilt on SPY core position
+
+**(Updated by Phase 2.5 — earlier draft used GEX-only; the double-stress version is OOS-better and more vendor-robust. See [backtest_results_gex_vs_vix.md](backtest_results_gex_vs_vix.md).)**
 
 **Setup:**
 - Pull daily GEX from SqueezeMetrics free CSV: [https://squeezemetrics.com/monitor/static/DIX.csv](https://squeezemetrics.com/monitor/static/DIX.csv)
-- Updated each evening after market close. The signal is for the *next* day.
+- Pull VIX from yfinance ticker `^VIX` (free, ubiquitous)
+- Both updated each evening after US close. Signal is for the *next* trading day.
 
 **Rule:**
-- If GEX(today) > 0 → hold full SPY position tomorrow
-- If GEX(today) ≤ 0 → reduce to 0% SPY (cash or short-duration Treasuries) tomorrow
-- If GEX flips back positive → re-enter at next-day open
+- **Long full SPY UNLESS** *both* `VIX > 25` AND `GEX < 0` simultaneously
+- If both stress triggers fire → reduce SPY to 0% (cash or short-duration Treasuries) for tomorrow
+- If either trigger un-fires → re-enter SPY at next-day open
+
+In one line: **be long unless dealer flow AND vol expectations agree on stress.**
+
+**Why two indicators not one:**
+- Phase 2.5 showed GEX-only OOS Sharpe 0.82, VIX-only OOS Sharpe 0.68. GEX adds info beyond VIX.
+- The double-stress (OR rule) gets OOS Sharpe **0.89** — close to SPY's 0.90 — while preserving the -22% max DD vs SPY's -34%.
+- Requiring confirmation across two channels makes the rule **robust to vendor risk on either**: if SqueezeMetrics changes GEX methodology one day, VIX is a sanity check; if VIX has a structural shift (post-2022 0DTE-driven floor), GEX is still working.
+- The "AND" rule (long only when BOTH calm) is too defensive — sacrifices equity premium when one signal is borderline. Don't use it.
 
 **Implementation in IBKR/Schwab/Fidelity retail:**
 - SPY shares (not options) for the core
-- Limit-order entries near the prior close to avoid spread drag — daily SPY spread is ~1bp on liquid hours
-- Approximately **14 round-trips per year** based on backtest. Costs on $50k position: ~$0 commission (free at most retail brokers) + ~$7 spread/year. Negligible.
+- Limit-order entries near the prior close — daily SPY spread is ~1bp during liquid hours
+- Approximately **8–14 round-trips per year**. Costs on $50k position: $0 commission (free at most retail brokers) + ~$5–7 spread/year. Negligible.
 
 **Sizing:**
 - This rule operates on the timing of full-equity exposure. It does *not* increase risk vs buy-and-hold. Use whatever your normal SPY allocation is.
 - Don't lever it up. The "stepping aside" gain is path quality, not extra return — adding leverage destroys the path-quality benefit.
 
 **Expected behavior:**
-- ~91% of days you're long SPY (calm-regime days)
-- ~9% of days you're flat (negative-GEX stress days)
-- **Most of the win is concentrated in 1-2 episodes per decade** (March 2020 was the dominant example in our 15-year sample). In any given year, the strategy may underperform SPY by a few percent. **You only see the value in tail events.**
-- ⚠️ This is a feature, not a bug. The same caveat applies to any defensive overlay: pension-fund endowments accept it; short-horizon retail traders often don't.
+- ~94% of days you're long SPY (only one or zero stress signals firing)
+- ~6% of days you're flat (BOTH triggers firing — the rare unambiguous stress regime)
+- **Most of the win is concentrated in 1-2 episodes per decade** (March 2020, Oct 2022 in our 15-year sample). In any given calm year, the strategy may underperform SPY by a fraction of a percent due to the few false-positive sit-out days.
+- ⚠️ This is a feature, not a bug. The defensive value shows up in tail events; the cost is small. Pension funds accept this trade; short-horizon traders often don't.
 
 **When to override the rule:**
-- If you're already net-defensive for other reasons (e.g., you've raised cash for a planned house purchase), don't double up.
-- If the GEX print is borderline (-0.5 to +0.5 std dev around the rolling 1-yr mean), the noise dominates the signal; sit on hands.
-- Don't use this rule near major positioning events (earnings season for retail-heavy single names, FOMC) on individual stocks — it's calibrated for SPY only.
+- If you're already net-defensive for other reasons (e.g., raised cash for a planned house purchase), don't double up.
+- If only ONE trigger is fired (e.g., VIX>25 but GEX still positive, or vice-versa), the rule says stay long — don't second-guess. The whole point of the double-stress trigger is to ignore single-signal false alarms.
+- Don't use this rule on individual stocks — it's calibrated for SPY only. Single names have their own dynamics; see Rule #2.
+
+**Daily operational tooling:** the `daily_signal.py` script (in this repo) automates all of this. Run after market close; it pulls both data sources, prints the regime, and recommends a position. See §"How to actually run this day-to-day" above.
 
 ---
 
