@@ -14,4 +14,12 @@ User is researching the popular claim "market makers reverse-engineer retail flo
 
 **How to apply:** When user mentions this project, dealer gamma, GEX, retail flow, or follows up on signal backtests, this is the relevant context. Working dir is `/Users/luomengzhou/Documents/Market Maker/`. Approved plan lives at `/Users/luomengzhou/.claude/plans/destination-market-maker-federated-dewdrop.md`.
 
-**Open blockers as of 2026-04-28:** Need to confirm (a) WRDS access via Columbia, (b) willingness to spend $200–500/mo on Polygon/Unusual Whales, before Phase 2 implementation. Defaulted to free-tier-only path if both no.
+**Status 2026-04-28 end of session:** Phase 1, 2.1, 2.2, 2.3, and 3 all done on free-tier path (SqueezeMetrics public CSV + yfinance). Pushed to GitHub at https://github.com/RomieCU/market-maker-research (private repo). User's machine returns to company in ~20 days, so the GitHub copy is the canonical one going forward.
+
+**Headline empirical findings:**
+1. **GEX defensive-tilt rule on SPY works** (OOS Sharpe 0.82, MaxDD -22% vs SPY -34%). Retail-actionable signal #1.
+2. **DIX retail-flow Q1→Q5 monotonic positive spread** (t-stat ~10) — falsifies "fade aggregate retail" meme.
+3. **Barber-Odean single-name attention-fade FAILS** on modern meme basket (NVDA/TSLA/GME etc 2019–2026) — extreme groups outperform with t=5.9 in the wrong direction. Survivorship-bias caveat noted but conclusion robust.
+4. **Net edge is at INDEX level (Rule #1 GEX tilt), not single-name level.** Rewritten Rule #2 says don't trade attention extremes systematically in either direction.
+
+**Outstanding next steps from playbook §"What we did NOT test":** 2.3b (2019-vintage meme basket re-test), 2.4 (FINRA ATS tilt), 2.5 (per-ticker GEX), 3.1 (cross-sectional GEX), 3.2 (live-attention dashboard), 4.1 (paper-trade Rule #1 in IBKR for 4 weeks). 4.1 is the highest-value next move.

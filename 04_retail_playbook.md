@@ -1,13 +1,20 @@
 # Retail Playbook — What to Borrow from Market-Maker / Dealer-Flow Mechanics
 
-*Phase 3 deliverable. Built on the [theory primer](01_theory_primer.md) and the empirical results in [backtest_results.md](backtest_results.md) and [backtest_results_dix.md](backtest_results_dix.md). Read those first for the why; this file is the so-what.*
+*Phase 3 deliverable. Built on the [theory primer](01_theory_primer.md) and three empirical sub-projects: [backtest_results.md](backtest_results.md) (GEX regime), [backtest_results_dix.md](backtest_results_dix.md) (DIX retail-flow), and [backtest_results_attention.md](backtest_results_attention.md) (Barber-Odean attention-fade reproduction). Read those first for the why; this file is the so-what.*
 
 ---
 
-## TL;DR — three rules that survived the data
+## TL;DR — what survived the data
 
-1. **Tilt SPY exposure based on dealer GEX regime.** Long when daily GEX > 0; flat when GEX < 0. Almost matches SPY's risk-adjusted return (OOS Sharpe 0.82 vs 0.90) while cutting max drawdown from -34% to -22%. ~14 trades per year. **This is the highest-quality finding.**
-2. **Stop fading aggregate retail.** The "MMs fade retail" meme is empirically wrong at the SPY index level. High-DIX (high retail buying) days predict *positive* forward returns at every horizon, with t-stats up to 10. The contrarian alpha lives in *single-name attention extremes*, not aggregate index flow.
+The most important finding is **what didn't survive**. The "MMs fade retail" meme is empirically rejected at *both* levels we tested:
+
+- **Aggregate retail (Phase 2.2 / DIX):** high retail buying predicts *positive* forward SPY returns, t-stats up to 10. Retail in aggregate is mildly informed, not dumb.
+- **Single-name attention (Phase 2.3 / Barber-Odean reproduction):** in modern meme-stock data (2019-2026), attention extremes are followed by *more* outperformance, not reversion. The classic Barber-Odean attention-fade is rejected on this basket — t=+5.9 the *wrong* direction.
+
+What survives:
+
+1. **Tilt SPY exposure based on dealer GEX regime.** Long when daily GEX > 0; flat when GEX < 0. Almost matches SPY's risk-adjusted return (OOS Sharpe 0.82 vs 0.90) while cutting max drawdown from -34% to -22%. ~14 trades per year. **This is the highest-quality finding in the project.**
+2. **Don't trade attention-extreme single names systematically — in either direction.** Don't fade (the data says you'll lose), don't chase (variance is huge, drawdowns when wrong are -50% to -90%). The retail edge is *not here*; treat these as unhedgeable lottery tickets and size accordingly.
 3. **Don't try to outrun MMs intraday.** The Dim/Eraker/Vilkov intraday gamma-reflexivity result does *not* survive translation to daily-frequency trading. Without intraday option-chain access (Polygon/CBOE DataShop) you can't directly trade their finding, and the naive daily proxies lose money cleanly.
 
 The rest of this document is the operational layer: position sizing, order types, when to override, what to skip.
@@ -49,26 +56,35 @@ The rest of this document is the operational layer: position sizing, order types
 
 ---
 
-### Rule #2 — Stop fading aggregate retail; do fade *individual-name attention extremes*
+### Rule #2 — Don't fade retail. Don't chase it either. Just don't trade attention extremes systematically.
 
 **Why aggregate retail isn't dumb (Phase 2.2 finding):**
 - DIX quintile sort: high-DIX days have *higher* forward 20-day returns than low-DIX days, monotonically.
 - t-stat on the spread is 8-10. This is a real effect, not noise.
 - Mechanism: aggregate retail buying tracks risk-appetite improvement, which is itself predictive of equity returns.
 
-**Where the contrarian alpha lives (from theory, not yet tested in this project):**
-- Single-name attention extremes (Barber & Odean 2008): a stock that's #1 on r/wallstreetbets, has 10× normal volume, and is +50% over 5 days is statistically a forward fade for 1-3 weeks.
-- This is **not** the same signal as DIX. DIX is broad-index retail positioning (mildly bullish-predictive). Attention-driven single-name buying is concentrated, parabolic, and contrarian-predictive.
+**Why single-name attention isn't fadeable either (Phase 2.3 finding — REVISED from earlier draft):**
 
-**Operational version:**
-- Maintain a watchlist of stocks at attention extremes (e.g., Reddit "ticker mentions today / 30-day average" > 5×).
-- For each, **avoid being long**, and consider small short-volatility positions (covered calls, cash-secured puts) to monetize the elevated implied vol that attention-stocks always carry.
-- Position sizing: ≤ 2% of NAV per name. Attention-driven moves can extend much further than fundamentals justify (GME 2021).
+We tested the Barber-Odean (2008) attention-fade hypothesis on a 10-name meme basket (NVDA, TSLA, GME, AMC, AMD, COIN, PLTR, RBLX, SOFI, RIOT) over 2019–2026 and a 5-name boring control basket (JNJ, KO, PG, WMT, JPM). Three attention proxies tested: top-decile prior 21d return, 5d volume > 2× normal, single-day move > 3σ.
 
-**Why we didn't backtest this in this project:**
-- Free Reddit Pushshift archive is offline since 2023; getting clean historical r/wsb mention data costs effort.
-- StockTwits API only returns the most recent 30 messages per ticker — fine for live monitoring, useless for backtest.
-- This rule is therefore "supported by literature, not yet by our own backtest." Phase 2.3 (optional) would test it.
+**Result: the Barber-Odean fade is rejected on the modern meme basket.** At 21d and 63d horizons, attention-extreme meme names *outperform* the rest of the basket by 145 to 1,109 bps with t-stats up to 5.9. The fade only weakly survives on the boring control basket at 5-day horizon, then reverses by 21 days.
+
+Why the academic finding doesn't translate:
+- Modern retail flow (Robinhood, r/wsb, 0DTE) creates a persistent bid in attention names that didn't exist in Barber & Odean's 1995–2000 sample.
+- Survivorship bias caveat: the meme basket has 2026-vintage selection (NVDA, TSLA were chosen *because* they became dominant). A 2019-vintage list would shrink the headline +1,100 bps but probably not flip its sign.
+- Bull-market backdrop: 2020–2025 had sustained equity-momentum tailwinds. Attention extremes coincide with momentum extremes; one can't be tested without the other in this window.
+
+**Bimodal outcomes are the real risk.** Mean is positive, distribution is not:
+- Most attention episodes momentum-continue (NVDA Q2 2024, MSTR 2024).
+- A meaningful minority crash 80–95% from peak (GME 2021 → -90%, BBBY → 0, RIDE → near-zero).
+- The mean disguises the fact that *which* episode you're in determines whether you make 5× or lose 90%.
+
+**Operational version (post-falsification):**
+- ✋ **Don't run a systematic short-attention strategy.** Data says it loses; borrow availability fails when you need it (squeeze risk); the academic literature behind the rule has not aged into this regime.
+- ✋ **Don't run a systematic chase-attention strategy.** The mean is positive but the variance + bimodality means any leveraged or concentrated implementation is a coin-flip on 80% drawdown.
+- ✓ **Position-size single-name attention plays as discretionary lottery tickets, not signal trades.** ≤1% of NAV per name; pre-committed stop loss; no averaging down. Treat them like venture-style returns: most go to zero, the winners pay for them.
+- ✓ **For yield-extraction, write covered calls or cash-secured puts on attention-extreme names you'd be willing to own at the strike.** This monetizes their elevated implied vol without requiring a directional view. The vol *is* high here — it's the most reliable feature of attention episodes.
+- ✓ **The retail edge is at the index level via GEX (Rule #1), not at the single-name level.** Internalize that and stop scanning unusual-flow lists.
 
 ---
 
@@ -124,6 +140,7 @@ Treat the Rule #1 GEX gate as the dominant defensive lever. Earnings and big-mov
 3. **Path-improvement, not alpha**: at the level of full-sample Sharpe, the GEX rule slightly *underperforms* SPY (0.85 vs 0.83 — within noise). The actionable improvement is in *drawdown experience*, which has psychological value. If you'd hold SPY through any drawdown without flinching, the rule offers nothing beyond reduced market beta in stress periods.
 4. **Single-asset (SPY)**: nothing here has been tested on QQQ, IWM, EFA, EEM, or single names. Same data source applies (SqueezeMetrics tracks both SPX and individual SPY components in their paid product) but our backtest is SPX-specific.
 5. **The DIX-based "retail isn't dumb at index level" finding doesn't translate to single names.** Don't assume r/wsb crowd buying NVDA is mildly informed because aggregate retail is mildly informed. Different mechanism.
+6. **Phase 2.3 attention-fade test has survivorship bias.** The 10-name meme basket was selected with 2026 hindsight; replacing NVDA/TSLA/COIN/PLTR with their 2019-vintage equivalents (BBBY/RIDE/NOK/BB) would flatten the +1,100 bps headline. The directional conclusion (no systematic Barber-Odean fade in modern meme names) is robust; the magnitude isn't.
 
 ---
 
@@ -143,10 +160,11 @@ If/when you want more depth, these are the natural follow-ups:
 
 | # | What | Why | Data needed |
 |---|---|---|---|
-| 2.3 | Single-name attention-fade signal | Test the "fade retail at attention extremes" rule on NVDA/TSLA/GME | Reddit Pushshift archive ($), StockTwits scrape, OR Robintrack 2018-2020 holdings |
+| 2.3b | Re-run attention test on 2019-vintage meme basket (BBBY, NOK, BB, RIDE, GME-era) | Removes the survivorship-bias confound in Phase 2.3; would let us state effect-size more honestly | yfinance daily OHLCV (free) |
 | 2.4 | Weekly FINRA ATS tilt | Test "dark pool % as institutional accumulation flag" on single names | FINRA ATS public files (free, T+2wk lag) |
-| 2.5 | NVDA/TSLA case studies | Apply GEX/DIX rules to specific high-meme names | Per-ticker GEX (paid: SpotGamma $200/mo, or DIY from CBOE) |
-| 3.1 | Cross-sectional GEX (long high-GEX names, short low-GEX names) | If GEX works as a *cross-sectional* signal in addition to time-series, combinable Sharpe could reach 1.5+ | Universe-level GEX (paid only) |
+| 2.5 | Per-ticker GEX on NVDA/TSLA episodes | Apply Rule #1 logic at single-name level on the names where retail attention is strongest | Per-ticker GEX (paid: SpotGamma $200/mo, or DIY from CBOE chains) |
+| 3.1 | Cross-sectional GEX (long high-GEX names, short low-GEX names) | If GEX works as a *cross-sectional* signal in addition to time-series, combined Sharpe could reach 1.5+ | Universe-level GEX (paid only) |
+| 3.2 | Sentiment composite — StockTwits + r/wsb live-watching panel | Build a forward-looking attention dashboard (not a backtest signal — a monitoring tool to flag names worth Rule #2 treatment) | StockTwits API (free), Reddit API (free) |
 | 4.1 | Paper-trade Rule #1 in IBKR for 4 weeks | Confirm the rule works in live conditions, no implementation gotchas | IBKR paper account (free) |
 
-Pick whichever interests you. Rule #1 is already actionable today; the rest is icing.
+Pick whichever interests you. **Rule #1 is already actionable today; everything else is icing.** The most valuable next step is probably 4.1 (paper-trade verification) — confirms the daily-CSV pipeline + signal end-to-end before committing real capital.
