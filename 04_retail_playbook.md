@@ -72,7 +72,7 @@ We tested the Barber-Odean (2008) attention-fade hypothesis on two baskets (Phas
 
 **Combined result: the Barber-Odean fade is rejected on the modern meme universe at all horizons that matter, regardless of basket selection.** The fade only weakly survives in the boring control basket at 5-day horizon. The conclusion is robust to survivorship-bias control.
 
-A nuance Phase 2.3b surfaced: `abnvol > 2×` shows a small significant fade at 5d (t=-2.4) before flipping to massive continuation at 63d. Liquidity-provider inventory normalization explains the short-window reversion; underlying flow tailwind explains the longer-window continuation. Doesn't change Rule #2 but is a possible Phase 2.4 follow-up.
+A nuance Phase 2.3b surfaced: `abnvol > 2×` shows a small significant fade at 5d (t=-2.4) before flipping to massive continuation at 63d. **Phase 2.4 tested whether this is tradable for retail and the answer is no** — see [backtest_results_abnvol_fade.md](backtest_results_abnvol_fade.md). Best per-trade gross is +3.8 bps; after a generous 5 bps round-trip cost the net is -1 bps and tighter signal thresholds produce *worse* not better per-trade economics. The statistical effect is real but too small to extract net of friction. No rule added; dead-end documented to prevent future re-testing.
 
 Why the academic finding doesn't translate:
 - Modern retail flow (Robinhood, r/wsb, 0DTE) creates a persistent bid in attention names that didn't exist in Barber & Odean's 1995–2000 sample.

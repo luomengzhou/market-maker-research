@@ -20,7 +20,8 @@ User is researching the popular claim "market makers reverse-engineer retail flo
 1. **GEX defensive-tilt rule on SPY works** (OOS Sharpe 0.82, MaxDD -22% vs SPY -34%). Retail-actionable signal #1.
 2. **DIX retail-flow Q1→Q5 monotonic positive spread** (t-stat ~10) — falsifies "fade aggregate retail" meme.
 3. **Barber-Odean single-name attention-fade FAILS** on both Phase 2.3 (2026-hindsight basket) AND Phase 2.3b (2019-vintage basket including BBBY). Extreme groups outperform with t=5.9 to 9.4 in the wrong direction. Survivorship-bias controlled and conclusion still holds.
-3b. **Phase 2.3b discovered a 5-day weak fade in `abnvol > 2×`** (t=-2.4) before the 63d continuation flip. Liquidity-provider inventory normalization story. Possible Phase 2.4 micro-strategy.
+3b. **Phase 2.3b discovered a 5-day weak fade in `abnvol > 2×`** (t=-2.4) before the 63d continuation flip. Liquidity-provider inventory normalization story.
+3c. **Phase 2.4 tested the abnvol fade as a tradable strategy and falsified it** — best per-trade gross is +3.8 bps; after 5 bps cost it's -1 bps; tighter thresholds make it worse. Statistical effect real, economically dead for retail. Dead-end documented in `backtest_results_abnvol_fade.md`.
 4. **Net edge is at INDEX level (Rule #1 GEX tilt), not single-name level.** Rewritten Rule #2 says don't trade attention extremes systematically in either direction.
 
 **Outstanding next steps from playbook §"What we did NOT test":** 2.3b (2019-vintage meme basket re-test), 2.4 (FINRA ATS tilt), 2.5 (per-ticker GEX), 3.1 (cross-sectional GEX), 3.2 (live-attention dashboard), 4.1 (paper-trade Rule #1 in IBKR for 4 weeks). 4.1 is the highest-value next move.
