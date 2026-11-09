@@ -1,1 +1,0 @@
-- [Market Maker / dealer-flow alpha project](project_market_maker.md) — multi-phase MM signal research; theory primer done, signal backtest pending data-access confirmation
