@@ -15,11 +15,22 @@ Outputs:
     figures/gex_drawdown.png            drawdown comparison
     backtest_results.md                 markdown summary table
 
-Run: python 03_backtest.py
+Run: python 03_backtest.py [--lag N]
+
+Signal timing (--lag):
+    GEX is published by SqueezeMetrics after the close, so a position formed
+    from day-t GEX can realistically only be held from the t+1 close onward
+    (daily_signal.py runs "each evening for tomorrow"). --lag 1 (default)
+    models that by shifting every signal position one more day before it is
+    multiplied by fwd_ret. --lag 0 reproduces the original, one-session
+    optimistic numbers committed in backtest_results.md. Buy-and-hold is never
+    lagged. With lag > 0 the outputs get a _lag<N> suffix so the committed
+    write-ups are not overwritten.
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -36,6 +47,51 @@ FIG_DIR.mkdir(exist_ok=True)
 
 OOS_START = "2021-01-01"
 TXN_COST_BPS = 1.0  # round-trip
+BUY_AND_HOLD = "SPY buy-and-hold"  # the one strategy label that is never lagged
+
+
+def apply_lag(pos: pd.Series, lag: int) -> pd.Series:
+    """Delay a position series by `lag` trading days.
+
+    pos[t] is the position decided from information available at the close of
+    day t and (in this project) multiplied by fwd_ret[t] = ret[t+1]. Shifting by
+    lag=1 means the day-t decision is only in the market from the t+1 close,
+    i.e. it earns ret[t+2] -- the realistic timing for a signal published after
+    the close. The first `lag` days are flat (0.0), not NaN, so costs and
+    drawdowns stay well defined. lag=0 returns the input unchanged.
+    """
+    if lag < 0:
+        raise ValueError("lag must be >= 0")
+    if lag == 0:
+        return pos
+    return pos.shift(lag).fillna(0.0)
+
+
+def lag_positions(positions: dict[str, pd.Series], lag: int, skip: tuple[str, ...] = (BUY_AND_HOLD,)) -> dict[str, pd.Series]:
+    """Apply `apply_lag` to every strategy in a {name: position} dict except `skip`."""
+    return {name: (pos if name in skip else apply_lag(pos, lag)) for name, pos in positions.items()}
+
+
+def lag_suffix(lag: int) -> str:
+    """'' for lag 0, '_lag1' for lag 1, ... used for output file names."""
+    return f"_lag{lag}" if lag > 0 else ""
+
+
+def lag_header_lines(lag: int) -> list[str]:
+    """Markdown header lines describing the signal-timing convention of a run."""
+    if lag == 0:
+        return [f"**Signal lag:** 0 days — position from day-*t* GEX/VIX is applied to the close-*t* → close-*t+1* return (one session optimistic; GEX is published after the close).", ""]
+    return [
+        f"**Signal lag:** {lag} day(s) — every signal position is shifted {lag} day(s) before being multiplied by the next-day return, so a day-*t* signal is first in the market from the close of *t+{lag}* (realistic for after-the-close GEX; buy-and-hold is not lagged). Prose sections below were written for the lag-0 run; only the tables and figures are regenerated.",
+        "",
+    ]
+
+
+def add_lag_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--lag", type=int, default=1, metavar="N",
+        help="trading days to delay positions before applying returns. 1 (default) = realistic after-the-close timing; 0 = reproduce the committed numbers.",
+    )
 
 
 def load_spy_returns(start: str = "2011-05-01") -> pd.DataFrame:
@@ -144,12 +200,13 @@ def run_backtest_one(
     df: pd.DataFrame,
     method: str,
     strategy: str = "defensive-tilt",
+    lag: int = 0,
     **kwargs,
 ) -> dict:
     regime = compute_gex_regime(df, method=method, **kwargs)
     df = df.assign(regime=regime).dropna(subset=["regime"])
 
-    pos = STRATEGY_BUILDERS[strategy](df, "regime")
+    pos = apply_lag(STRATEGY_BUILDERS[strategy](df, "regime"), lag)  # the single place the timing lag enters
     strat_ret = apply_costs(pos, df["fwd_ret"], TXN_COST_BPS)
 
     is_mask = df.index < OOS_START
@@ -251,17 +308,18 @@ def fmt_stats_table(stats: pd.DataFrame) -> str:
     return df.to_markdown()
 
 
-def write_summary(results: list[dict], df: pd.DataFrame, rand_sharpe: float, out: Path) -> None:
+def write_summary(results: list[dict], df: pd.DataFrame, rand_sharpe: float, out: Path, lag: int = 0) -> None:
     spy_full_sh = sharpe(df["fwd_ret"])
     spy_oos_sh = sharpe(df.loc[df.index >= OOS_START, "fwd_ret"])
     spy_dd = max_drawdown((1 + df["fwd_ret"]).cumprod())
+    sfx = lag_suffix(lag)
 
     lines = [
         "# Phase 2.1 — GEX regime backtest on SPY",
         "",
         f"**Data window:** {df.index.min().date()} → {df.index.max().date()}  ({len(df):,} trading days)",
         f"**OOS start:** {OOS_START}  •  **Round-trip cost:** {TXN_COST_BPS} bps  •  **Negative-GEX days:** {(df['gex']<0).sum()} ({(df['gex']<0).mean():.1%})",
-        "",
+        *lag_header_lines(lag),
         "## Headline result",
         "",
         f"The **defensive-tilt** rule (long SPY when daily GEX > 0; flat when GEX < 0) achieves",
@@ -323,9 +381,9 @@ def write_summary(results: list[dict], df: pd.DataFrame, rand_sharpe: float, out
         "",
         "## Reading the figures",
         "",
-        "- `figures/gex_regime_returns.png` — clear visual of the **dispersion difference**: negative-GEX (red) is visibly wider and more bimodal than positive-GEX (blue). Both are roughly centered at zero with positive drift.",
-        "- `figures/gex_strategy_equity.png` — defensive-tilt (blue) tracks SPY (gray) closely until each major drawdown, where it lags less. Random baseline (orange) drifts modestly upward from the long-bias.",
-        "- `figures/gex_drawdown.png` — the COVID-2020 episode is the standout: SPY hit -34%, defensive-tilt capped at ~-12%. Most of the strategy's value is concentrated in tail events.",
+        f"- `figures/gex_regime_returns{sfx}.png` — clear visual of the **dispersion difference**: negative-GEX (red) is visibly wider and more bimodal than positive-GEX (blue). Both are roughly centered at zero with positive drift.",
+        f"- `figures/gex_strategy_equity{sfx}.png` — defensive-tilt (blue) tracks SPY (gray) closely until each major drawdown, where it lags less. Random baseline (orange) drifts modestly upward from the long-bias.",
+        f"- `figures/gex_drawdown{sfx}.png` — the COVID-2020 episode is the standout: SPY hit -34%, defensive-tilt capped at ~-12%. Most of the strategy's value is concentrated in tail events.",
         "",
         "## What this implies for the project's main question",
         "",
@@ -334,8 +392,9 @@ def write_summary(results: list[dict], df: pd.DataFrame, rand_sharpe: float, out
     out.write_text("\n".join(lines) + "\n")
 
 
-def main() -> None:
-    print("Loading data...")
+def main(lag: int = 1) -> None:
+    sfx = lag_suffix(lag)
+    print(f"Loading data...  (signal lag = {lag} day(s))")
     gex = load_gex()
     spy = load_spy_returns()
     df = merge_signals(gex, spy)
@@ -359,7 +418,7 @@ def main() -> None:
         ("aggressive-tilt", "zscore", {"threshold": 1.0}),
     ]
     for strat, method, kwargs in grid:
-        r = run_backtest_one(df, method=method, strategy=strat, **kwargs)
+        r = run_backtest_one(df, method=method, strategy=strat, lag=lag, **kwargs)
         results.append(r)
         kw = str(kwargs) if kwargs else ""
         print(
@@ -381,10 +440,12 @@ def main() -> None:
 
     # Pick the defensive-tilt sign method as the "headline" strategy for figures
     primary = next(r for r in results if r["strategy"] == "defensive-tilt" and r["method"] == "sign")
-    plot_regime_returns(primary["df"], primary["regime"], FIG_DIR / "gex_regime_returns.png")
-    plot_equity_curves(primary["strat_ret"], df["fwd_ret"], rand, FIG_DIR / "gex_strategy_equity.png")
-    plot_drawdown(primary["strat_ret"], df["fwd_ret"], FIG_DIR / "gex_drawdown.png")
-    write_summary(results, df, sharpe(rand), ROOT / "backtest_results.md")
+    plot_regime_returns(primary["df"], primary["regime"], FIG_DIR / f"gex_regime_returns{sfx}.png")
+    plot_equity_curves(primary["strat_ret"], df["fwd_ret"], rand, FIG_DIR / f"gex_strategy_equity{sfx}.png")
+    plot_drawdown(primary["strat_ret"], df["fwd_ret"], FIG_DIR / f"gex_drawdown{sfx}.png")
+    out_md = ROOT / f"backtest_results{sfx}.md"
+    write_summary(results, df, sharpe(rand), out_md, lag=lag)
+    print(f"  wrote {out_md}")
 
     print("\n--- Conditional stats by GEX regime, full sample (sign method) ---")
     print(primary["stats_full"].round(3))
@@ -397,4 +458,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _parser = argparse.ArgumentParser(description="Phase 2.1 GEX regime backtest on SPY")
+    add_lag_arg(_parser)
+    main(lag=_parser.parse_args().lag)

@@ -14,10 +14,18 @@ without losing on others, update Rule #1 + daily_signal.py. Otherwise document
 the result and stick with binary (simpler to execute).
 
 Output: figures/continuous_rule1_comparison.png, backtest_results_continuous_rule1.md
+
+Run: python 03_backtest_continuous_rule1.py [--lag N]
+    --lag 1 (default): realistic timing -- every variant's position (including
+             the vol-targeted one) is delayed one extra day because GEX is
+             published after the close (see 03_backtest.py). Writes
+             backtest_results_continuous_rule1_lag1.md + figures/*_lag1.png.
+    --lag 0: reproduces the committed backtest_results_continuous_rule1.md.
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -38,6 +46,11 @@ sharpe = _bt.sharpe
 max_drawdown = _bt.max_drawdown
 load_spy_returns = _bt.load_spy_returns
 apply_costs = _bt.apply_costs
+lag_positions = _bt.lag_positions
+lag_suffix = _bt.lag_suffix
+lag_header_lines = _bt.lag_header_lines
+add_lag_arg = _bt.add_lag_arg
+BUY_AND_HOLD = _bt.BUY_AND_HOLD
 
 _spec_vix = spec_from_file_location("gv_lib", ROOT / "03_backtest_gex_vs_vix.py")
 _gv = module_from_spec(_spec_vix)
@@ -160,8 +173,9 @@ def plot_equity(positions: dict[str, pd.Series], df: pd.DataFrame, out: Path) ->
     plt.close(fig)
 
 
-def main() -> None:
-    print("Loading GEX, SPY, VIX...")
+def main(lag: int = 1) -> None:
+    sfx = lag_suffix(lag)
+    print(f"Loading GEX, SPY, VIX...  (signal lag = {lag} day(s))")
     gex = load_gex()
     spy = load_spy_returns()
     vix = load_vix()
@@ -169,25 +183,29 @@ def main() -> None:
     print(f"Merged: {len(df):,} rows, {df.index.min().date()} -> {df.index.max().date()}")
 
     positions = {
-        "SPY buy-and-hold":         pd.Series(1.0, index=df.index),
+        BUY_AND_HOLD:               pd.Series(1.0, index=df.index),
         "Binary OR (Rule #1)":      position_binary_or(df),
         "Three-state (1 / 0.5 / 0)": position_three_state(df),
         "Smooth logistic (k=1.5)":  position_smooth_logistic(df, k=1.5),
         "Vol-targeted (10% target)": position_vol_targeted(df, target_vol=0.10),
     }
+    # The timing lag enters the pipeline here and only here: every variant
+    # (vol-targeted included, buy-and-hold excluded) is shifted `lag` days
+    # before evaluate()/plot_equity multiply it by fwd_ret.
+    positions = lag_positions(positions, lag)
 
     print("\n=== Comparison ===\n")
     res = evaluate(positions, df)
     print(res.round(3).to_string(index=False))
 
-    plot_equity(positions, df, FIG_DIR / "continuous_rule1_comparison.png")
+    plot_equity(positions, df, FIG_DIR / f"continuous_rule1_comparison{sfx}.png")
 
     md = [
         "# Phase 2.6 — Continuous variants of Rule #1",
         "",
         f"**Data window:** {df.index.min().date()} → {df.index.max().date()}  ({len(df):,} trading days)",
         f"**OOS start:** {OOS_START}  •  **Round-trip cost:** {TXN_COST_BPS} bps",
-        "",
+        *lag_header_lines(lag),
         "## Question",
         "",
         "Phase 2.5's binary OR rule (long unless VIX>25 AND GEX<0) is the playbook headline at OOS Sharpe 0.89 and MaxDD -22%. Can a continuous variant — three-state, smooth-logistic, or vol-targeted — improve on Sharpe, drawdown, OR turnover (whipsaw) without losing the others?",
@@ -207,7 +225,7 @@ def main() -> None:
         "",
         "## Files",
         "",
-        "- `figures/continuous_rule1_comparison.png` — equity curves (top) + position traces (bottom) for binary vs smooth logistic",
+        f"- `figures/continuous_rule1_comparison{sfx}.png` — equity curves (top) + position traces (bottom) for binary vs smooth logistic",
         "",
         "## Reading and decision",
         "",
@@ -218,11 +236,13 @@ def main() -> None:
         "",
         "If any continuous variant clearly dominates, update Rule #1 + `daily_signal.py`. If they tie or lose on stats while complicating execution, **stick with binary** — KISS principle for retail.",
     ]
-    out = ROOT / "backtest_results_continuous_rule1.md"
+    out = ROOT / f"backtest_results_continuous_rule1{sfx}.md"
     out.write_text("\n".join(md) + "\n")
     print(f"\nWrote {out}")
     print("Done.")
 
 
 if __name__ == "__main__":
-    main()
+    _parser = argparse.ArgumentParser(description="Phase 2.6 continuous Rule #1 variants")
+    add_lag_arg(_parser)
+    main(lag=_parser.parse_args().lag)

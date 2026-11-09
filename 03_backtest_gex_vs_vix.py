@@ -22,17 +22,23 @@ Strategies tested (all daily, long SPY or flat, 1bp round-trip cost):
     C. AND-rule:  long only if VIX low AND GEX positive (most defensive)
     D. OR-rule:   flat if VIX high OR GEX negative      (any-trigger defensive)
     E. GEX residualized for VIX: regress GEX on VIX, use sign of residual
+
+Run: python 03_backtest_gex_vs_vix.py [--lag N]
+    --lag 1 (default): realistic timing -- positions are delayed one extra day
+             because GEX is published after the close (see 03_backtest.py).
+             Writes backtest_results_gex_vs_vix_lag1.md + figures/*_lag1.png.
+    --lag 0: reproduces the committed backtest_results_gex_vs_vix.md.
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "02_signals"))
@@ -48,6 +54,11 @@ sharpe = _bt.sharpe
 max_drawdown = _bt.max_drawdown
 load_spy_returns = _bt.load_spy_returns
 apply_costs = _bt.apply_costs
+lag_positions = _bt.lag_positions
+lag_suffix = _bt.lag_suffix
+lag_header_lines = _bt.lag_header_lines
+add_lag_arg = _bt.add_lag_arg
+BUY_AND_HOLD = _bt.BUY_AND_HOLD
 
 FIG_DIR = ROOT / "figures"
 OOS_START = "2021-01-01"
@@ -59,6 +70,8 @@ def load_vix() -> pd.DataFrame:
     cache.parent.mkdir(parents=True, exist_ok=True)
     if cache.exists():
         return pd.read_parquet(cache)
+    import yfinance as yf  # lazy: only needed when the parquet cache is missing
+
     vix = yf.download("^VIX", start="2010-01-01", auto_adjust=True, progress=False)
     if isinstance(vix.columns, pd.MultiIndex):
         vix.columns = vix.columns.get_level_values(0)
@@ -76,7 +89,7 @@ def merge_all(gex: pd.DataFrame, spy: pd.DataFrame, vix: pd.DataFrame) -> pd.Dat
 def build_strategies(df: pd.DataFrame, vix_threshold: float) -> dict[str, pd.Series]:
     """Each returns a position series (1.0 = long SPY, 0.0 = flat)."""
     pos = {}
-    pos["SPY buy-and-hold"] = pd.Series(1.0, index=df.index)
+    pos[BUY_AND_HOLD] = pd.Series(1.0, index=df.index)
     # A. VIX-only
     pos["VIX-only (long if VIX<{})".format(vix_threshold)] = (df["vix"] < vix_threshold).astype(float)
     # B. GEX-only (the original Rule #1)
@@ -182,8 +195,9 @@ def plot_scatter(df: pd.DataFrame, out: Path) -> None:
     plt.close(fig)
 
 
-def main() -> None:
-    print("Loading GEX, SPY, VIX...")
+def main(lag: int = 1) -> None:
+    sfx = lag_suffix(lag)
+    print(f"Loading GEX, SPY, VIX...  (signal lag = {lag} day(s))")
     gex = load_gex()
     spy = load_spy_returns()
     vix = load_vix()
@@ -199,25 +213,27 @@ def main() -> None:
     print(f"  VIX>25 days with negative GEX:   {diag['vix_gt_25_with_neg_gex_pct']:.0f}%   (n={diag['vix_gt_25_total_days']} VIX>25 days)")
 
     print("\n=== Strategy comparison @ VIX threshold = 25 ===")
-    strategies = build_strategies(df, vix_threshold=25.0)
+    # The timing lag enters the pipeline here and only here: every signal
+    # position is shifted `lag` days before evaluate()/plot multiply it by fwd_ret.
+    strategies = lag_positions(build_strategies(df, vix_threshold=25.0), lag)
     res_25 = evaluate(strategies, df)
     print(res_25.round(3).to_string(index=False))
 
     print("\n=== Strategy comparison @ VIX threshold = 20 ===")
-    strategies_20 = build_strategies(df, vix_threshold=20.0)
+    strategies_20 = lag_positions(build_strategies(df, vix_threshold=20.0), lag)
     res_20 = evaluate(strategies_20, df)
     print(res_20.round(3).to_string(index=False))
 
     print("\nWriting figures + summary...")
-    plot_equity_comparison(strategies, df, FIG_DIR / "gex_vs_vix_equity.png")
-    plot_scatter(df, FIG_DIR / "gex_vs_vix_scatter.png")
+    plot_equity_comparison(strategies, df, FIG_DIR / f"gex_vs_vix_equity{sfx}.png")
+    plot_scatter(df, FIG_DIR / f"gex_vs_vix_scatter{sfx}.png")
 
     md = [
         "# Phase 2.5 — Does GEX carry information beyond VIX?",
         "",
         f"**Data window:** {df.index.min().date()} → {df.index.max().date()}  ({len(df):,} trading days)",
         f"**OOS start:** {OOS_START}  •  **Round-trip cost:** {TXN_COST_BPS} bps",
-        "",
+        *lag_header_lines(lag),
         "## The question",
         "",
         "Phase 2.1's GEX defensive tilt works (OOS Sharpe 0.82, MaxDD -22% vs SPY's -34%). But VIX and GEX are correlated — both rise during stress. **Is the GEX rule's edge actually about dealer positioning, or is it just a complicated VIX proxy?** If a simple VIX rule produces the same result, we should retire GEX (vendor risk, complexity) and use VIX (free everywhere, transparent).",
@@ -253,18 +269,20 @@ def main() -> None:
         "",
         "## Files",
         "",
-        "- `figures/gex_vs_vix_equity.png` — equity curves of all 6 strategies",
-        "- `figures/gex_vs_vix_scatter.png` — VIX vs GEX scatter; reveals where the two indicators disagree",
+        f"- `figures/gex_vs_vix_equity{sfx}.png` — equity curves of all 6 strategies",
+        f"- `figures/gex_vs_vix_scatter{sfx}.png` — VIX vs GEX scatter; reveals where the two indicators disagree",
         "",
         "## Implication for the playbook",
         "",
         "If GEX adds incremental info, Rule #1 stays as written. If VIX-only is just as good, the playbook should be updated to use VIX (free, ubiquitous, no vendor risk). If combined dominates, the runner script should incorporate both signals.",
     ]
-    out = ROOT / "backtest_results_gex_vs_vix.md"
+    out = ROOT / f"backtest_results_gex_vs_vix{sfx}.md"
     out.write_text("\n".join(md) + "\n")
     print(f"  wrote {out}")
     print("Done.")
 
 
 if __name__ == "__main__":
-    main()
+    _parser = argparse.ArgumentParser(description="Phase 2.5 GEX vs VIX backtest")
+    add_lag_arg(_parser)
+    main(lag=_parser.parse_args().lag)
