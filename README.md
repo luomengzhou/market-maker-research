@@ -8,9 +8,9 @@ A popular trading claim says market makers steer retail traders into trends and 
 
 ## Headline results
 
-SPY, daily, 2011-05 → 2026-04 (3,769 trading days). Out-of-sample from 2021-01-01. Round-trip cost 1 bp.
+SPY, daily, 2011-05 → 2026-04 (3,769 trading days). Out-of-sample from 2021-01-01. Round-trip cost 1 bp. Sharpe = mean/std of daily returns × √252, no risk-free adjustment. Max DD is over the full sample (the −34% is COVID 2020, which is in-sample). Source: [`backtest_results_gex_vs_vix.md`](backtest_results_gex_vs_vix.md) / [`backtest_results_continuous_rule1.md`](backtest_results_continuous_rule1.md).
 
-| Strategy | OOS Sharpe | Full Sharpe | Max DD | Turnover / yr |
+| Strategy | OOS Sharpe | Full Sharpe | Max DD (full) | Turnover / yr |
 |---|---:|---:|---:|---:|
 | SPY buy-and-hold | 0.90 | 0.83 | −34% | 0 |
 | VIX-only (long if VIX < 25) | 0.68 | 0.83 | −23% | 8 |
@@ -49,14 +49,18 @@ figures/                       charts referenced from the write-ups
 
 ```bash
 pip install -r requirements.txt
+pytest -q                            # offline smoke tests of the metric / cost / regime helpers
 python 03_backtest_gex_vs_vix.py     # regenerates backtest_results_gex_vs_vix.md + figures
 python daily_signal.py               # today's signal for the final rule
 ```
 
-Data: [SqueezeMetrics DIX/GEX](https://squeezemetrics.com/monitor/dix) (free CSV) and yfinance daily prices for SPY, VIX and the single-name baskets.
+The scripts download SPY/VIX via yfinance on first run and cache them under `data/cache/`. Note that re-running a `03_backtest*.py` script rewrites its `backtest_results_*.md` from a template; the committed write-ups contain hand-written interpretation sections on top of the generated tables, so diff before committing a regenerated file.
+
+Data: [SqueezeMetrics DIX/GEX](https://squeezemetrics.com/monitor/dix) (free public CSV, © SqueezeMetrics; a snapshot through 2026-04-28 is committed in `data/raw/` for reproducibility and is not otherwise redistributed) and yfinance daily prices for SPY, VIX and the single-name baskets.
 
 ## Limitations
 
+- **Signal timing is one session optimistic.** The backtest uses day-*t* GEX and VIX close to take a position at the day-*t* close and earns the close-*t* → close-*t+1* return. SqueezeMetrics publishes GEX after the close, so a live trader (and `daily_signal.py`, which runs in the evening) can only act at the *t+1* open and misses the overnight gap. A quick check of the GEX-only rule on the SPX price column in the SqueezeMetrics CSV with a one-day position lag: OOS Sharpe 0.76 → 0.63, full-sample max DD −22% → −29% (buy-and-hold −34%). The drawdown benefit is therefore smaller in practice than the headline table shows; the combined GEX + VIX rule has not yet been re-run with the lag.
 - **The final rule was chosen by comparing variants out of sample** (Phase 2.5 and 2.6 pick the best of six and five variants on 2021+ data). The reported OOS Sharpe is therefore optimistic. A clean test needs a fresh hold-out period, which `daily_signal.py --log` is accumulating.
 - GEX comes from one vendor's methodology; the signal depends on how SqueezeMetrics estimates dealer positioning.
 - Single-name tests use yfinance. Two 2019-vintage names (NKLA, RIDE) are missing after delisting, so some survivorship bias remains.

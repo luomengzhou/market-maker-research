@@ -26,7 +26,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "02_signals"))
@@ -45,6 +44,8 @@ def load_spy_returns(start: str = "2011-05-01") -> pd.DataFrame:
     if cache.exists():
         spy = pd.read_parquet(cache)
     else:
+        import yfinance as yf  # imported lazily so the metric helpers can be used offline
+
         spy = yf.download("SPY", start=start, auto_adjust=True, progress=False)
         if isinstance(spy.columns, pd.MultiIndex):
             spy.columns = spy.columns.get_level_values(0)

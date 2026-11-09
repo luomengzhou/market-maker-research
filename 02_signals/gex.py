@@ -14,7 +14,7 @@ Public construction reference: SqueezeMetrics 2017 white paper
     https://squeezemetrics.com/monitor/download/pdf/white_paper.pdf
 
 This module exposes load_gex(), compute_gex_regime(), and a small CLI
-for ad-hoc inspection. The backtest itself lives in 03_backtest.ipynb.
+for ad-hoc inspection. The backtest itself lives in ../03_backtest.py.
 """
 
 from __future__ import annotations

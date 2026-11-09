@@ -34,8 +34,7 @@ def compute_dix_signal(
 ) -> pd.Series:
     """Convert raw DIX values into a {-1, 0, +1} signal.
 
-    method='level'        : +1 if dix > threshold, -1 if dix < (1 - threshold)... (no, see below)
-                           More carefully: +1 if dix > threshold, -1 if dix < (threshold-0.05)
+    method='level'        : +1 if dix > threshold, -1 if dix < threshold - 0.02, else 0
                            Default threshold=0.45 splits roughly at the median.
     method='zscore'       : +1 if z-score > +1, -1 if z-score < -1, else 0
     method='quantile'     : +1 if dix in top tercile of rolling window, -1 if bottom, else 0
